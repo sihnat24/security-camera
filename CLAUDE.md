@@ -49,6 +49,15 @@ threading model, file format for clips, alert logic, etc.
 
 ---
 
+## Claude's Role
+
+Claude is a **teacher and guide**, not a code author. The user writes the code.
+Claude explains concepts, answers questions, points out bugs, and suggests what to
+try next — but does NOT write implementation code unprompted. Snippets for
+explanation are fine; full implementations are not.
+
+---
+
 ## Architecture Principles
 
 1. **Explain before implement.** Before writing a module, write a comment block
@@ -78,8 +87,35 @@ threading model, file format for clips, alert logic, etc.
 
 ---
 
+## Current File Structure
+
+```
+main.py                  # entry point: read frame → detect → plot → display
+sources/
+  base.py                # abstract base class `stream` (ABC) — enforces read()/close() on all sources
+  webcam.py              # WebCamSource: wraps cv2.VideoCapture(0), returns np.ndarray frames
+detectors/
+  yolo.py                # yoloDetector: loads yolov8n.pt, wraps model(frame) → Results
+requirements.txt         # opencv-python, ultralytics, lapx
+```
+
+**Main loop pattern:**
+```
+cam.read() → detector.detect(frame) → results[0].plot() → cv2.imshow()
+```
+`results[0].plot()` is a Ultralytics helper that draws bounding boxes + labels directly on a copy of the frame.
+
+---
+
 ## Session Log
 
-### Session 1 (2026-06-20)
-- Goal: tracking on a live feed
-- Start: webcam input → YOLOv8 detection → ByteTrack → visualize tracked IDs
+### Session 1 (2026-06-21)
+- **Goal:** webcam → YOLO detection → live display with bounding boxes
+- **Achieved:** working pipeline end-to-end — `main.py` reads frames from webcam, runs YOLOv8n inference, renders annotated frame in an OpenCV window, `q` to quit
+- **Built:**
+  - `sources/base.py` — ABC enforcing `read()`/`close()` interface on all future sources (webcam, RTSP, file)
+  - `sources/webcam.py` — `WebCamSource` wrapping `cv2.VideoCapture(0)`
+  - `detectors/yolo.py` — `yoloDetector` loading `yolov8n.pt` via Ultralytics
+  - `main.py` — the loop tying it together
+- **Model:** `yolov8n` (nano) — smallest/fastest YOLOv8 variant, good for iteration; upgrade to `yolov8s` or larger if accuracy matters
+- **Next session:** add ByteTrack (`model.track()` instead of `model()`) to get persistent track IDs across frames

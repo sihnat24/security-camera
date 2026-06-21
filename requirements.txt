@@ -1,0 +1,3 @@
+opencv-python
+ultralytics   # YOLOv8 + built-in ByteTrack integration
+lapx          # LAP solver required by ByteTrack
