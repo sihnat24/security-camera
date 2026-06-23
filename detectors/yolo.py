@@ -7,8 +7,13 @@ class yoloDetector:
 
     def __init__(self): #yolo26n.pt or yolo11n.pt if below fails
         self.model = YOLO('yolov8n.pt')
+        self.classes = [0]
 
 
     
     def detect(self, frame: np.ndarray) -> Results:
+        #stateless detection only 
         return self.model(frame)
+
+    def track(self, frame: np.ndarray) -> Results:
+        return self.model.track(frame, tracker="bytetrack.yaml",classes=self.classes)
