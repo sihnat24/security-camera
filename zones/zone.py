@@ -4,8 +4,9 @@ import numpy as np
 
 class Zone:
 
-    def __init__(self, pts):
+    def __init__(self, pts, name):
         self.pts = pts
+        self.name = name
 
     
     def draw(self, frame, triggered):

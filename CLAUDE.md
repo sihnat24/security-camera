@@ -119,3 +119,50 @@ cam.read() → detector.detect(frame) → results[0].plot() → cv2.imshow()
   - `main.py` — the loop tying it together
 - **Model:** `yolov8n` (nano) — smallest/fastest YOLOv8 variant, good for iteration; upgrade to `yolov8s` or larger if accuracy matters
 - **Next session:** add ByteTrack (`model.track()` instead of `model()`) to get persistent track IDs across frames
+
+### Session 3 (2026-06-23)
+- **Goal:** zone detection — draw a polygon on the frame, trigger when a person enters it
+- **Achieved:** working zone pipeline — `zones/zone.py` with `Zone` class, polygon drawn on frame, red when triggered green when not, `pointPolygonTest` for inside/outside check
+- **Built:**
+  - `zones/zone.py` — `Zone` class with `draw(frame, triggered)` (mutates in place) and `check(box) → bool`
+  - `main.py` updated — instantiates `Zone`, loops over `results[0].boxes.xyxy`, calls `check` on each, passes `any(trig)` to `draw`
+- **Key decisions:**
+  - Bottom-center `(x1+x2)//2, y2` as foot point — tests where person stands on ground plane, not body center
+  - Zone drawn on `detect_frame` (post-plot copy), not raw frame — so boxes and zone are on same image
+  - `draw` mutates in place — no copy per zone, scales to multiple zones cleanly
+  - Points must be in perimeter order (clockwise/counterclockwise) — sequential connection by `polylines` causes hourglass if out of order
+- **Next session candidates:** event logic (enter/exit detection), clip recording on trigger, multi-zone support, dwell time tracking
+- **Next session goal:** event transitions (IDLE → TRIGGERED → RECORDING → COOLDOWN → IDLE) + ring buffer recorder. `deque(maxlen=fps*N)` holds rolling pre-trigger frames; on zone entry dump buffer + keep writing; on exit + cooldown write clip to disk. Two pieces: event state machine in `main.py`, ring buffer + `cv2.VideoWriter` in new `recorder.py`.
+
+### Session 4 (2026-06-25)
+- **Goal:** wire Raspberry Pi camera as a remote source over LAN
+- **Achieved:** Pi streams MJPEG over HTTP; laptop pulls frames via `cv2.VideoCapture(url)` and runs YOLO + zone detection unchanged
+- **Built:**
+  - `sources/ip_camera.py` — `RaspberrySource(stream)` takes a URL, wraps `cv2.VideoCapture(url)`, identical `read()`/`close()` interface to `WebCamSource`
+  - Pi runs `pi_camera_node.py` (Flask + Picamera2, port 8000) — captures RGB888 frames, JPEG-encodes, serves as `multipart/x-mixed-replace` MJPEG stream
+- **Key decisions:**
+  - `cv2.VideoCapture` handles MJPEG boundary parsing and JPEG decode natively — no custom HTTP or frame parsing needed
+  - URL passed as constructor arg (`RaspberrySource(url)`) not hardcoded — keeps class reusable for any MJPEG source
+  - Heavy ML (YOLO, ByteTrack) stays on laptop; Pi is capture-only — no inference on Pi
+- **Hardware:** Raspberry Pi 5, Pi Camera V2 (IMX219), CSI ribbon cable — cable is fragile, reseat if stream drops
+- **Pi access:** `ssh sev@192.168.1.220`, start server: `python3 ~/security_camera/pi_camera_node.py`; stream URL: `http://192.168.1.220:8000/stream`
+- **Known gotcha:** camera hardware times out if CSI cable loses contact — restart Picamera2/Flask after reseating
+- **Next session goal:** event transitions (IDLE → TRIGGERED → RECORDING → COOLDOWN → IDLE) + ring buffer recorder (same as Session 3 goal — still pending)
+
+### Session 5 (2026-06-26)
+- **Goal:** event logging, loitering detection, and clip recording pipeline
+- **Achieved:** full pipeline from detection → zone state → loitering trigger → pre-buffer dump → clip to disk, with structured event log
+- **Built:**
+  - `events.log` — append-mode structured log: timestamp, event type (ENTRY/EXIT/LOITER), track ID, zone name
+  - Ring buffer — `deque(maxlen=FPS * PRE_BUFFER_SECONDS)` rolling window of annotated frames, always running
+  - Loitering detection — per-track dwell time via `zone_state` dict storing `(inside: bool, entry_time: datetime)`, fires when dwell exceeds `loiter_thresh`
+  - Clip recording — on loiter trigger: dump ring buffer to `cv2.VideoWriter`, keep writing until EXIT, save to `clips/` as timestamped `.mp4`
+  - Class filter — `WATCHED_CLASSES = {0, 15, 16}` (person, cat, dog) — all other COCO classes ignored for zone logic
+- **Key decisions:**
+  - `zone_state` keyed on `int(track_id)` — tensor keys don't work as dict keys, must cast
+  - `trig` list kept separate from `zone_state` — `any(trig)` drives zone color, state dict drives logging; two concerns, both needed
+  - Pre-buffer holds annotated frames (post-plot) — clips show bounding boxes and zone overlay, not raw frames
+  - Dump blocks main loop briefly (~100-200ms) — acceptable for front door use case, producer-consumer queue deferred
+  - Log file opened with `"w"` on startup — fresh log each run; change to `"a"` when persistence across runs is needed
+- **Known limitation:** brief display freeze at loiter trigger while buffer dumps to disk; recording itself is correct
+- **Next candidates:** producer-consumer writer queue (fix freeze), multi-zone support, cooldown period to prevent re-triggering, dwell time in log entries

@@ -3,12 +3,11 @@ from .base import stream
 import numpy as np
 
 
-class WebCamSource(stream):
+class RaspberrySource(stream):
 
-    def __init__(self):
-        self.cap = cv2.VideoCapture(0)
-
-    
+    def __init__(self, url):
+        self.cap = cv2.VideoCapture(url)
+            
     def read(self) -> np.ndarray:
 
             ret, frame = self.cap.read()
@@ -22,10 +21,11 @@ class WebCamSource(stream):
     def close(self):
         self.cap.release()
         cv2.destroyAllWindows()
-    
+
+
     @property
     def fps(self):
-        return 30
+        return 30 
     
     @property
     def frame_size(self):

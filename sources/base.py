@@ -12,3 +12,12 @@ class stream(ABC):
     @abstractmethod
     def close(self):
         pass
+
+    @property
+    def fps(self):
+        pass
+
+    @property
+    def frame_sz(self):
+        pass
+
